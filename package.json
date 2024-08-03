@@ -1,0 +1,83 @@
+{
+  "name": "cocos-toolbox",
+  "displayName": "Cocos Toolbox",
+  "description": "Enhance your Cocos Creator project development workflow.",
+  "version": "1.0.0",
+  "publisher": "lee-yip",
+  "icon": "image/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/LeeYip/cocos-toolbox"
+  },
+  "engines": {
+    "vscode": "^1.50.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "CocosToolbox.findReferences",
+        "title": "Find Cocos References",
+        "category": "Cocos"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "CocosToolbox.findReferences",
+          "group": "navigation",
+          "when": "editorLangId == typescript || editorLangId == javascript"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "CocosToolbox.findReferences",
+        "key": "ctrl+alt+f",
+        "mac": "cmd+alt+f",
+        "when": "editorTextFocus"
+      }
+    ],
+    "configuration": {
+      "type": "object",
+      "title": "Cocos Toolbox",
+      "properties": {
+        "CocosToolbox.enableMeta": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable auto sync meta file"
+        },
+        "CocosToolbox.enableColor": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable show color token"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.50.0",
+    "@types/mocha": "^10.0.7",
+    "@types/node": "20.x",
+    "@typescript-eslint/eslint-plugin": "^7.14.1",
+    "@typescript-eslint/parser": "^7.11.0",
+    "eslint": "^8.57.0",
+    "typescript": "^5.4.5",
+    "@vscode/test-cli": "^0.0.9",
+    "@vscode/test-electron": "^2.4.0"
+  }
+}
