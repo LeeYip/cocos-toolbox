@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import Config from './config';
-import ColorBlock from './features/colorBlock';
+import ColorToken from './features/colorToken';
 import FindAssets from './features/findAssets';
 import MetaSync from './features/metaSync';
 
@@ -17,32 +17,11 @@ export function activate(context: vscode.ExtensionContext) {
 		MetaSync.onDidRenameFiles(event.files);
 	});
 
-	// 监听文档激活
-	let editorActiveListener = vscode.window.onDidChangeActiveTextEditor(editor => {
-		if (editor) {
-			ColorBlock.updateDecorations(editor);
-		}
-	});
-
-	// 监听文本内容变化
-	let editorChangeListener = vscode.workspace.onDidChangeTextDocument(event => {
-		if (vscode.window.activeTextEditor && event.document === vscode.window.activeTextEditor.document) {
-			ColorBlock.updateDecorations(vscode.window.activeTextEditor);
-		}
-	});
-
-	// 监听鼠标悬停
-	let hoverLinstener = vscode.languages.registerHoverProvider({ scheme: 'file' }, {
-		provideHover(document, position, token) {
-			return ColorBlock.provideHover(document, position, token);
-		}
-	});
-
 	// 将事件监听器注册到 context，以便在插件停用时自动取消监听
-	context.subscriptions.push(fileDeleteListener, fileRenameListener, editorActiveListener, editorChangeListener, hoverLinstener);
+	context.subscriptions.push(fileDeleteListener, fileRenameListener);
 
 	Config.init(context);
-	ColorBlock.init(context);
+	ColorToken.init(context);
 	FindAssets.init(context);
 }
 

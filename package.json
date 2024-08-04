@@ -2,7 +2,7 @@
   "name": "cocos-toolbox",
   "displayName": "Cocos Toolbox",
   "description": "Enhance your Cocos Creator project development workflow.",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "publisher": "lee-yip",
   "icon": "image/icon.png",
   "repository": {
@@ -57,7 +57,19 @@
           "type": "boolean",
           "default": true,
           "description": "Enable show color token"
-        }
+        },
+        "CocosToolbox.colorLanguages": {
+          "type": "array",
+          "default": [
+              "javascript",
+              "typescript",
+              "json"
+          ],
+          "items": {
+              "type": "string"
+          },
+          "description": "List of file formats supported by color token."
+      }
       }
     }
   },
