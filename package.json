@@ -2,7 +2,7 @@
   "name": "cocos-toolbox",
   "displayName": "Cocos Toolbox",
   "description": "Enhance your Cocos Creator project development workflow.",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "publisher": "lee-yip",
   "icon": "image/icon.png",
   "repository": {
@@ -69,12 +69,19 @@
               "type": "string"
           },
           "description": "List of file formats supported by color token."
+        },
+        "CocosToolbox.creatorOpenAssetTimeout": {
+          "type": "number",
+          "default": 1500,
+          "minimum": 200,
+          "description": "Timeout (milliseconds) for notifying Cocos Creator."
       }
       }
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
+    "vscode:prepublish": "npm run build:bridge && npm run compile",
+    "build:bridge": "npm --prefix ./resources/vscode-creator-bridge run build",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",

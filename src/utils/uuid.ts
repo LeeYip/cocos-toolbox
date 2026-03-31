@@ -14,7 +14,7 @@ var Reg_CompressedUuid = /^[0-9a-zA-Z+/]{22,23}$/;
  */
 export default class Uuid {
     // 加了这个标记后，字符串就不可能会是 uuid 了。
-    public static NonUuidMark = '.';
+    public static NonUuidMark = ".";
 
     // 压缩后的 uuid 可以减小保存时的尺寸，但不能做为文件名（因为无法区分大小写并且包含非法字符）。
     // 默认将 uuid 的后面 27 位压缩成 18 位，前 5 位保留下来，方便调试。
@@ -26,7 +26,7 @@ export default class Uuid {
      */
     public static compressUuid(uuid: string, min: boolean = false): string {
         if (Reg_Uuid.test(uuid)) {
-            uuid = uuid.replace(Reg_Dash, '');
+            uuid = uuid.replace(Reg_Dash, "");
         }
         else if (!Reg_NormalizedUuid.test(uuid)) {
             return uuid;
@@ -38,7 +38,7 @@ export default class Uuid {
     public static compressHex(hexString: string, reservedHeadLength: number): string {
         var length = hexString.length;
         var i;
-        if (typeof reservedHeadLength !== 'undefined') {
+        if (typeof reservedHeadLength !== "undefined") {
             i = reservedHeadLength;
         }
         else {
@@ -54,7 +54,7 @@ export default class Uuid {
             base64Chars.push(Base64KeyChars[((hexVal2 & 3) << 4) | hexVal3]);
             i += 3;
         }
-        return head + base64Chars.join('');
+        return head + base64Chars.join("");
     }
 
     public static decompressUuid(str: string) {
@@ -69,7 +69,7 @@ export default class Uuid {
                 hexChars.push((rhs & 0xF).toString(16));
             }
             //
-            str = str.slice(0, 5) + hexChars.join('');
+            str = str.slice(0, 5) + hexChars.join("");
         }
         else if (str.length === 22) {
             // decode base64
@@ -82,9 +82,9 @@ export default class Uuid {
                 hexChars.push((rhs & 0xF).toString(16));
             }
             //
-            str = str.slice(0, 2) + hexChars.join('');
+            str = str.slice(0, 2) + hexChars.join("");
         }
-        return [str.slice(0, 8), str.slice(8, 12), str.slice(12, 16), str.slice(16, 20), str.slice(20)].join('-');
+        return [str.slice(0, 8), str.slice(8, 12), str.slice(12, 16), str.slice(16, 20), str.slice(20)].join("-");
     }
 
     public static isUuid(str: string) {

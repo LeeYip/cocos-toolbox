@@ -1,11 +1,11 @@
-import * as vscode from 'vscode';
-import Config from './config';
-import ColorToken from './features/colorToken';
-import FindAssets from './features/findAssets';
-import MetaSync from './features/metaSync';
+import * as vscode from "vscode";
+import Config from "./config";
+import ColorToken from "./features/colorToken";
+import FindAssets from "./features/findAssets";
+import MetaSync from "./features/metaSync";
 
 export function activate(context: vscode.ExtensionContext) {
-	console.log('Cocos Toolbox is now active!');
+	console.log("Cocos Toolbox is now active!");
 
 	// 监听文件删除事件  
 	let fileDeleteListener = vscode.workspace.onDidDeleteFiles(event => {

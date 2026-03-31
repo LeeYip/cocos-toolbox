@@ -1,7 +1,7 @@
-import * as vscode from 'vscode';
-import Config from '../config';
+import * as vscode from "vscode";
+import Config from "../config";
 
-const REG_COLOR = /(?:#([0-9a-fA-F]{6,8}))|(?<![a-zA-Z_])(?:[Cc]olor)\((?:\s*(\d+)\s*)?(?:,\s*(\d+)\s*)?(?:,\s*(\d+)\s*)?(?:,\s*(\d+)\s*)?\)/g;
+const REG_COLOR = /(?:#([0-9a-fA-F]{6}|[0-9a-fA-F]{8}))|(?<![a-zA-Z_])(?:[Cc]olor)\((?:\s*(\d+)\s*)?(?:,\s*(\d+)\s*)?(?:,\s*(\d+)\s*)?(?:,\s*(\d+)\s*)?\)/g;
 
 /**
  * 对特定格式的内容显示颜色色块
@@ -31,7 +31,7 @@ export default class ColorToken {
         // 更新color provider
         let selector: vscode.DocumentFilter[] = [];
         Config.colorLanguages.forEach((v) => {
-            selector.push({ scheme: 'file', language: v });
+            selector.push({ scheme: "file", language: v });
         });
         this._colorProvider = vscode.languages.registerColorProvider(selector, new ColorProvider());
         this._context.subscriptions.push(this._colorProvider);
@@ -60,14 +60,14 @@ export default class ColorToken {
      * @param hex 16进制字符串
      */
     public static hexToRgba(hex: string): [number, number, number, number] {
-        // 去除开头的 '#'，并转为小写
-        hex = hex.replace(/^#/, '').toLowerCase();
+        // 去除开头的 "#"，并转为小写
+        hex = hex.replace(/^#/, "").toLowerCase();
 
         // 如果颜色值是三位数的缩写，则进行扩展
         if (hex.length === 3) {
-            hex = hex.split('').map(function (c) {
+            hex = hex.split("").map(function (c) {
                 return c + c;
-            }).join('');
+            }).join("");
         }
 
         // 解析 R、G、B 组件
@@ -93,10 +93,10 @@ export default class ColorToken {
      */
     public static rgbaToHex(rgba: [number, number, number, number], min: boolean = false): string {
         // 将每个通道的值转换为十六进制，并确保为两位数
-        const rHex = Math.round(rgba[0]).toString(16).padStart(2, '0');
-        const gHex = Math.round(rgba[1]).toString(16).padStart(2, '0');
-        const bHex = Math.round(rgba[2]).toString(16).padStart(2, '0');
-        const aHex = Math.round(rgba[3]).toString(16).padStart(2, '0');
+        const rHex = Math.round(rgba[0]).toString(16).padStart(2, "0");
+        const gHex = Math.round(rgba[1]).toString(16).padStart(2, "0");
+        const bHex = Math.round(rgba[2]).toString(16).padStart(2, "0");
+        const aHex = Math.round(rgba[3]).toString(16).padStart(2, "0");
 
         // 拼接并返回十六进制颜色值
         return min && rgba[3] === 255 ? `#${rHex}${gHex}${bHex}` : `#${rHex}${gHex}${bHex}${aHex}`;
