@@ -1,5 +1,9 @@
 # Change Log
 
+## v1.0.4 - 2026-03-31
+
+- Update README
+
 ## v1.0.3 - 2026-03-31
 
 - Find References: Added support for notifying Cocos Creator to open the referenced asset directly.

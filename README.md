@@ -19,7 +19,7 @@
 ### 3) 一键查找脚本被哪些资源引用
 - 快捷键：**<kbd>Ctrl / Cmd</kbd> + <kbd>Alt</kbd> + <kbd>F</kbd>**
 - 在右键菜单中快速查找“引用当前脚本”的场景和预制体。
-- 在结果面板中点击条目后，会通知 Cocos Creator 打开对应资源。
+- 在结果面板中点击条目后，会通知 Cocos Creator（支持2.4与3.x版本）打开对应资源。
 - 首次使用该功能时，会自动在当前 Cocos Creator 项目的扩展目录安装桥接扩展。
 - 由于 Creator 扩展机制，桥接扩展安装后通常需要重启一次 Creator 才会生效。
 - 若面板提示“通知失败”，请优先检查：
@@ -27,7 +27,7 @@
   - 当前打开的是否同一个项目；
   - 项目内桥接扩展是否已正确安装并已重启 Creator 生效。
 
-![image](./image/find.jpg)</br>
+![image](./image/find.gif)</br>
 
 ## 配置项
 - `CocosToolbox.enableMeta`：是否启用 Meta 自动同步。

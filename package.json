@@ -2,7 +2,7 @@
   "name": "cocos-toolbox",
   "displayName": "Cocos Toolbox",
   "description": "Enhance your Cocos Creator project development workflow.",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "publisher": "lee-yip",
   "icon": "image/icon.png",
   "repository": {
@@ -61,12 +61,12 @@
         "CocosToolbox.colorLanguages": {
           "type": "array",
           "default": [
-              "javascript",
-              "typescript",
-              "json"
+            "javascript",
+            "typescript",
+            "json"
           ],
           "items": {
-              "type": "string"
+            "type": "string"
           },
           "description": "List of file formats supported by color token."
         },
@@ -75,7 +75,7 @@
           "default": 1500,
           "minimum": 200,
           "description": "Timeout (milliseconds) for notifying Cocos Creator."
-      }
+        }
       }
     }
   },
