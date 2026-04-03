@@ -1,21 +1,9 @@
 import * as fs from "fs";
 import * as http from "http";
 import * as path from "path";
-
-type OpenAssetPayload = {
-    projectId?: string;
-    uuid?: string;
-    assetPath?: string;
-};
-
-type OpenAssetResult = {
-    ok: boolean;
-    focused: boolean;
-    opened: boolean;
-    assetUrl: string;
-    message: string;
-    kind?: "prefab" | "scene" | "other";
-};
+import type { BridgeAdapter, OpenAssetPayload, OpenAssetResult } from "./bridgeAdapter";
+import { BridgeAdapter2x } from "./bridgeAdapter2x";
+import { BridgeAdapter3x } from "./bridgeAdapter3x";
 
 type BridgeState = {
     projectId: string;
@@ -32,13 +20,12 @@ let server: http.Server | null = null;
 let currentPort = DEFAULT_PORT;
 let currentProjectPath = "";
 let currentProjectId = "";
-
-function getEditor(): any {
-    return (global as any).Editor;
-}
+let activeCreatorMajor = 3;
+let activeAdapter: BridgeAdapter | null = null;
 
 function bridgeLog(message: string): void {
-    const Editor = getEditor();
+    // 仅调试用
+    return;
     if (Editor && typeof Editor.log === "function") {
         Editor.log(`[${PACKAGE_NAME}] ${message}`);
         return;
@@ -47,7 +34,6 @@ function bridgeLog(message: string): void {
 }
 
 function detectCreatorMajor(): number {
-    const Editor = getEditor();
     if (Editor && Editor.Message && typeof Editor.Message.request === "function") {
         return 3;
     }
@@ -62,12 +48,8 @@ function getSettingsPath(): string {
     return path.join(localDir, SETTINGS_FILE);
 }
 
-function normalizeProjectPath(projectPath: string): string {
-    return path.resolve(projectPath).replace(/\\/g, "/").toLowerCase();
-}
-
 function createProjectId(projectPath: string): string {
-    const content = normalizeProjectPath(projectPath);
+    const content = path.resolve(projectPath).replace(/\\/g, "/").toLowerCase();
     let hash = 2166136261;
     for (let i = 0; i < content.length; i++) {
         hash ^= content.charCodeAt(i);
@@ -95,21 +77,25 @@ function readSavedPort(): number {
 }
 
 function savePort(port: number): void {
-    const p = getSettingsPath();
-    fs.writeFileSync(
-        p,
-        JSON.stringify(
-            {
-                port,
-                projectId: currentProjectId,
-                projectPath: currentProjectPath,
-                updatedAt: Date.now(),
-            },
-            null,
-            2,
-        ),
-        "utf8",
-    );
+    try {
+        const p = getSettingsPath();
+        fs.writeFileSync(
+            p,
+            JSON.stringify(
+                {
+                    port,
+                    projectId: currentProjectId,
+                    projectPath: currentProjectPath,
+                    updatedAt: Date.now(),
+                },
+                null,
+                2,
+            ),
+            "utf8",
+        );
+    } catch (e: any) {
+        bridgeLog(`save settings failed: ${e?.message || "unknown error"}`);
+    }
 }
 
 function getBridgeState(): BridgeState {
@@ -146,229 +132,101 @@ function normalizeAssetUrl(rawPath?: string): string | null {
 }
 
 function focusCreatorWindow(): boolean {
-    const Editor = getEditor();
-    if (Editor && Editor.Window && typeof Editor.Window.focus === "function") {
-        try {
-            Editor.Window.focus();
-            return true;
-        } catch {
+    try {
+        const electron = require("electron");
+        const BrowserWindow = electron?.BrowserWindow;
+        if (!BrowserWindow || typeof BrowserWindow.getAllWindows !== "function") {
             return false;
         }
-    }
-    return false;
-}
-
-async function requestEditor(channel: string, method: string, ...args: any[]): Promise<any> {
-    const Editor = getEditor();
-    if (!Editor || !Editor.Message || typeof Editor.Message.request !== "function") {
-        return undefined;
-    }
-    try {
-        return await Editor.Message.request(channel, method, ...args);
-    } catch {
-        return undefined;
-    }
-}
-
-function resolveUuidFor24(payload: OpenAssetPayload, assetUrl: string | null): string | null {
-    if (payload.uuid) {
-        return payload.uuid;
-    }
-    if (!assetUrl) {
-        return null;
-    }
-    const Editor = getEditor();
-    if (!Editor || !Editor.assetdb || typeof Editor.assetdb.urlToUuid !== "function") {
-        return null;
-    }
-    try {
-        const uuid = Editor.assetdb.urlToUuid(assetUrl);
-        return uuid || null;
-    } catch {
-        return null;
-    }
-}
-
-async function resolveUuidFor3x(payload: OpenAssetPayload, assetUrl: string | null): Promise<string | null> {
-    if (payload.uuid) {
-        return payload.uuid;
-    }
-    if (!assetUrl) {
-        return null;
-    }
-    const uuidByRequest = await requestEditor("asset-db", "query-uuid-by-url", assetUrl);
-    if (typeof uuidByRequest === "string" && uuidByRequest) {
-        return uuidByRequest;
-    }
-    if (uuidByRequest && typeof uuidByRequest.uuid === "string") {
-        return uuidByRequest.uuid;
-    }
-    const assetInfo = await requestEditor("asset-db", "query-asset-info", assetUrl);
-    if (assetInfo && typeof assetInfo.uuid === "string") {
-        return assetInfo.uuid;
-    }
-    const assetMeta = await requestEditor("asset-db", "query-asset-meta", assetUrl);
-    if (assetMeta && typeof assetMeta.uuid === "string") {
-        return assetMeta.uuid;
-    }
-    const Editor = getEditor();
-    if (Editor && Editor.assetdb && typeof Editor.assetdb.urlToUuid === "function") {
-        try {
-            const legacyUuid = Editor.assetdb.urlToUuid(assetUrl);
-            return legacyUuid || null;
-        } catch {
-            return null;
+        const windows = BrowserWindow.getAllWindows();
+        const scored = (windows || [])
+            .map((item: any) => {
+                let score = 0;
+                const title = typeof item?.getTitle === "function" ? String(item.getTitle() || "") : "";
+                const titleLower = title.toLowerCase();
+                const url = item?.webContents && typeof item.webContents.getURL === "function" ? String(item.webContents.getURL() || "") : "";
+                const urlLower = url.toLowerCase();
+                if (typeof item?.isDestroyed === "function" && item.isDestroyed()) {
+                    score -= 1000;
+                }
+                if (typeof item?.isVisible === "function" && item.isVisible()) {
+                    score += 50;
+                }
+                if (typeof item?.isFocused === "function" && item.isFocused()) {
+                    score += 20;
+                }
+                if (titleLower.includes("cocos") || titleLower.includes("creator")) {
+                    score += 80;
+                }
+                if (titleLower.includes("worker") || titleLower.includes("build")) {
+                    score -= 200;
+                }
+                if (urlLower.includes("worker") || urlLower.includes("build")) {
+                    score -= 120;
+                }
+                return { item, score };
+            })
+            .sort((a: any, b: any) => b.score - a.score);
+        const win = scored.length > 0 ? scored[0].item : undefined;
+        if (!win) {
+            return false;
         }
-    }
-    return null;
-}
-
-async function resolveUuid(payload: OpenAssetPayload, assetUrl: string | null, creatorMajor: number): Promise<string | null> {
-    if (creatorMajor >= 3) {
-        return await resolveUuidFor3x(payload, assetUrl);
-    }
-    return resolveUuidFor24(payload, assetUrl);
-}
-
-function getAssetUrlByUuidFor24(uuid: string): string {
-    const Editor = getEditor();
-    if (!Editor || !Editor.assetdb || typeof Editor.assetdb.uuidToUrl !== "function") {
-        return "";
-    }
-    try {
-        return Editor.assetdb.uuidToUrl(uuid) || "";
-    } catch {
-        return "";
-    }
-}
-
-async function getAssetUrlByUuidFor3x(uuid: string): Promise<string> {
-    const urlByRequest = await requestEditor("asset-db", "query-url-by-uuid", uuid);
-    if (typeof urlByRequest === "string") {
-        return urlByRequest;
-    }
-    if (urlByRequest && typeof urlByRequest.url === "string") {
-        return urlByRequest.url;
-    }
-    return getAssetUrlByUuidFor24(uuid);
-}
-
-async function openAssetFor24(uuid: string | null, assetUrl: string | null, focused: boolean): Promise<OpenAssetResult> {
-    const Editor = getEditor();
-    const resolvedAssetUrl = uuid ? getAssetUrlByUuidFor24(uuid) : assetUrl || "";
-    if (!uuid) {
-        return { ok: false, focused, opened: false, assetUrl: resolvedAssetUrl, kind: "other", message: "uuid is empty" };
-    }
-    let opened = false;
-    let message = "";
-    const isPrefab = resolvedAssetUrl.endsWith(".prefab");
-    const isScene = resolvedAssetUrl.endsWith(".fire") || resolvedAssetUrl.endsWith(".scene");
-    const kind: "prefab" | "scene" | "other" = isPrefab ? "prefab" : isScene ? "scene" : "other";
-    try {
-        if (isScene && Editor.Panel && typeof Editor.Panel.open === "function") {
-            Editor.Panel.open("scene", { uuid });
-            opened = true;
-            message = "opened by scene panel";
+        if (typeof win.isMinimized === "function" && win.isMinimized() && typeof win.restore === "function") {
+            win.restore();
         }
-    } catch {}
-    try {
-        if (!opened && isPrefab && Editor.Ipc && typeof Editor.Ipc.sendToAll === "function") {
-            Editor.Ipc.sendToAll("scene:enter-prefab-edit-mode", uuid);
-            opened = true;
-            message = "opened by prefab mode";
+        if (typeof win.show === "function") {
+            win.show();
         }
-    } catch {}
-    try {
-        if (!opened && Editor.assetdb && typeof Editor.assetdb.openAsset === "function") {
-            Editor.assetdb.openAsset(uuid);
-            opened = true;
-            message = "opened by assetdb";
+        if (electron?.app && typeof electron.app.focus === "function") {
+            electron.app.focus();
         }
-    } catch {}
-    if (!opened) {
-        message = `failed to open asset. uuid=${uuid}`;
-    }
-    bridgeLog(`openAsset24 uuid=${uuid} kind=${kind} focused=${focused} opened=${opened} url=${resolvedAssetUrl || "<empty>"}`);
-    return {
-        ok: opened,
-        focused,
-        opened,
-        assetUrl: resolvedAssetUrl,
-        kind,
-        message,
-    };
-}
-
-async function tryOpenByRequest(method: string, ...args: any[]): Promise<boolean> {
-    const Editor = getEditor();
-    if (!Editor || !Editor.Message || typeof Editor.Message.request !== "function") {
-        return false;
-    }
-    try {
-        await Editor.Message.request("asset-db", method, ...args);
+        if (typeof win.moveTop === "function") {
+            win.moveTop();
+        }
+        if (typeof win.setAlwaysOnTop === "function") {
+            const wasAlwaysOnTop = typeof win.isAlwaysOnTop === "function" ? !!win.isAlwaysOnTop() : false;
+            win.setAlwaysOnTop(true);
+            if (typeof win.focus === "function") {
+                win.focus();
+            }
+            win.setAlwaysOnTop(wasAlwaysOnTop);
+            return true;
+        }
+        if (typeof win.focus === "function") {
+            win.focus();
+        }
         return true;
     } catch {
         return false;
     }
 }
 
-async function openAssetFor3x(uuid: string | null, assetUrl: string | null, focused: boolean): Promise<OpenAssetResult> {
-    const resolvedAssetUrl = uuid ? await getAssetUrlByUuidFor3x(uuid) : assetUrl || "";
-    let opened = false;
-    let message = "";
-    if (uuid) {
-        const openByUuid = await tryOpenByRequest("open-asset", uuid);
-        if (openByUuid) {
-            opened = true;
-            message = "opened by uuid";
-        }
+async function openAsset(uuid: string | null, assetUrl: string | null): Promise<OpenAssetResult> {
+    if (!activeAdapter) {
+        return {
+            ok: false,
+            opened: false,
+            located: false,
+            assetUrl: assetUrl || "",
+            message: "adapter is not initialized",
+        };
     }
-    if (!opened && resolvedAssetUrl) {
-        const openByUrl = await tryOpenByRequest("open-asset", resolvedAssetUrl);
-        if (openByUrl) {
-            opened = true;
-            message = "opened by asset url";
-        }
+    const openedResult = await activeAdapter.openAsset(uuid, assetUrl);
+    if (!openedResult.opened) {
+        return openedResult;
     }
-    if (!opened && uuid) {
-        const Editor = getEditor();
-        if (Editor && Editor.assetdb && typeof Editor.assetdb.openAsset === "function") {
-            try {
-                Editor.assetdb.openAsset(uuid);
-                opened = true;
-                message = "opened by legacy uuid";
-            } catch {}
-        }
-    }
-    if (!opened && resolvedAssetUrl) {
-        const Editor = getEditor();
-        if (Editor && Editor.assetdb && typeof Editor.assetdb.openAsset === "function") {
-            try {
-                Editor.assetdb.openAsset(resolvedAssetUrl);
-                opened = true;
-                message = "opened by legacy url";
-            } catch {}
-        }
-    }
-    if (!opened) {
-        message = `failed to open asset. uuid=${uuid || "<none>"} assetUrl=${resolvedAssetUrl || "<none>"}`;
-    }
-    bridgeLog(`openAsset3x uuid=${uuid || "<none>"} focused=${focused} opened=${opened} url=${resolvedAssetUrl || "<empty>"}`);
-    return {
-        ok: opened,
-        focused,
-        opened,
-        assetUrl: resolvedAssetUrl,
-        message,
+    // 成功打开资源后聚焦窗口
+    focusCreatorWindow();
+    // 成功打开资源后定位资源管理器
+    const locateResult = await activeAdapter.locateAssetInBrowser(uuid, openedResult.assetUrl || assetUrl);
+    const merged: OpenAssetResult = {
+        ...openedResult,
+        ok: openedResult.opened,
+        located: locateResult.located,
+        locateMethod: locateResult.locateMethod,
     };
-}
-
-async function openAsset(uuid: string | null, assetUrl: string | null, creatorMajor: number): Promise<OpenAssetResult> {
-    const focused = focusCreatorWindow();
-    if (creatorMajor >= 3) {
-        return await openAssetFor3x(uuid, assetUrl, focused);
-    }
-    return await openAssetFor24(uuid, assetUrl, focused);
+    bridgeLog(`openAsset opened=${merged.opened} assetUrl=${merged.assetUrl || "<none>"}`);
+    return merged;
 }
 
 function readBody(req: http.IncomingMessage): Promise<string> {
@@ -424,15 +282,19 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
                 res.end(JSON.stringify({ ok: false, message: "projectId mismatch", projectId: currentProjectId }));
                 return;
             }
-            const creatorMajor = detectCreatorMajor();
+            if (!activeAdapter) {
+                res.statusCode = 500;
+                res.end(JSON.stringify({ ok: false, message: "bridge adapter is not initialized" }));
+                return;
+            }
             const assetUrl = normalizeAssetUrl(payload.assetPath);
-            const uuid = await resolveUuid(payload, assetUrl || null, creatorMajor);
+            const uuid = await activeAdapter.resolveUuid(payload, assetUrl || null);
             if (!uuid && !assetUrl) {
                 res.statusCode = 400;
                 res.end(JSON.stringify({ ok: false, message: "invalid assetPath/uuid" }));
                 return;
             }
-            const result = await openAsset(uuid, assetUrl || null, creatorMajor);
+            const result = await openAsset(uuid, assetUrl || null);
             res.statusCode = result.ok ? 200 : 500;
             res.end(JSON.stringify({ ok: result.ok, uuid, ...result }));
             return;
@@ -484,11 +346,28 @@ function stopServer(): void {
 
 module.exports = {
     load() {
-        const Editor = getEditor();
-        currentProjectPath = Editor.Project.path as string;
-        currentProjectId = createProjectId(currentProjectPath);
-        currentPort = readSavedPort();
-        startServer(currentPort);
+        bridgeLog("load start");
+        try {
+            const projectPath = Editor && Editor.Project ? (Editor.Project.path as string) : "";
+            if (!projectPath) {
+                bridgeLog("load aborted: Editor.Project.path is empty");
+                return;
+            }
+            currentProjectPath = projectPath;
+            currentProjectId = createProjectId(currentProjectPath);
+            activeCreatorMajor = detectCreatorMajor();
+            if (activeCreatorMajor >= 3) {
+                activeAdapter = new BridgeAdapter3x();
+            } else {
+                activeAdapter = new BridgeAdapter2x();
+            }
+            bridgeLog(`adapter initialized for creator major ${activeCreatorMajor}`);
+            currentPort = readSavedPort();
+            bridgeLog(`start server with initial port ${currentPort}`);
+            startServer(currentPort);
+        } catch (e: any) {
+            bridgeLog(`load failed: ${e?.message || "unknown error"}`);
+        }
     },
     unload() {
         stopServer();

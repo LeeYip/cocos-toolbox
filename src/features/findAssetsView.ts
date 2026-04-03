@@ -30,7 +30,7 @@ body { font-family: var(--vscode-font-family); color: var(--vscode-foreground); 
 .path { margin-top: 6px; font-size: 12px; color: var(--vscode-descriptionForeground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .status { margin-top: 6px; min-height: 18px; font-size: 12px; font-weight: 500; }
 .status-main { line-height: 1.4; }
-.status-hint { margin-top: 2px; font-size: 11px; color: var(--vscode-descriptionForeground); line-height: 1.4; }
+.status-hint { margin-top: 2px; font-size: 11px; color: var(--vscode-descriptionForeground); line-height: 1.4; white-space: pre-wrap; }
 .ok { color: var(--vscode-testing-iconPassed); }
 .err { color: var(--vscode-testing-iconFailed); }
 .empty { font-size: 12px; color: var(--vscode-descriptionForeground); border: 1px dashed var(--vscode-panel-border); border-radius: 8px; padding: 12px; margin-bottom: 8px; }
@@ -84,8 +84,8 @@ window.addEventListener("message", (event) => {
   if (message.success) {
     setStatus(statusEl, "status ok", "✅ 已通知 Creator 打开");
   } else {
-    const detail = message.error ? "详情：" + message.error : "";
-    const hint = "请检查 Creator 是否已正常开启，并确认当前项目已打开且桥接插件可用。" + (detail ? " " + detail : "");
+    const detail = message.error ? "错误详情：" + message.error : "错误详情：未知错误";
+    const hint = "1. 请检查 Cocos Creator 是否已正常打开当前项目。\\n2. 若首次启用引用查找功能，会自动安装桥接插件 vscode-creator-bridge；安装完成后请重启 Cocos Creator，使桥接插件生效。\\n" + detail;
     setStatus(statusEl, "status err", "❌ 通知失败", hint);
   }
 });

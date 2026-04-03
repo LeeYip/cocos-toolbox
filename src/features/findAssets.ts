@@ -43,6 +43,8 @@ export default class FindAssets {
     private static _needFullRefresh: boolean = true;
     private static _waitingPromise: boolean = false;
     private static _waitingResolve: Array<() => void> = [];
+    private static _searchRunning: boolean = false;
+    private static _searchQueued: boolean = false;
 
     public static init(context: vscode.ExtensionContext): void {
         if (this._init) return;
@@ -52,7 +54,6 @@ export default class FindAssets {
         // 创建文件系统监视器，监听特定文件或文件夹的变化
         this._watcher = vscode.workspace.createFileSystemWatcher("**/assets/**/*.{fire,scene,prefab}");
         // 监听文件内容变化事件
-        this._watcher.onDidChange((uri) => { });
         this._watcher.onDidCreate((uri) => {
             let path = uri.fsPath;
             if (!this.isInWorkspaceAssets(path)) {
@@ -82,8 +83,8 @@ export default class FindAssets {
             watcher.onDidDelete(onGitChanged);
         });
 
-        let searchLinstener = vscode.commands.registerCommand(this.command, () => {
-            this.findCocosAssets();
+        let searchLinstener = vscode.commands.registerCommand(this.command, async () => {
+            await this.runFindCocosAssets();
         });
 
         context.subscriptions.push(this._watcher, ...this._gitWatchers, searchLinstener);
@@ -112,7 +113,54 @@ export default class FindAssets {
     /**
      * 缓存所有项目内的资源文件路径
      */
-    private static async getCacheAssets(): Promise<void> {
+    private static async collectWorkspaceAssetPaths(): Promise<Set<string>> {
+        const promises = [vscode.workspace.findFiles("assets/**/*.fire"), vscode.workspace.findFiles("assets/**/*.scene"), vscode.workspace.findFiles("assets/**/*.prefab")];
+        const value = await Promise.all(promises);
+        const nextCachePathSet: Set<string> = new Set();
+        let array: vscode.Uri[];
+        let uri: vscode.Uri;
+        let i: number;
+        let j: number;
+        for (i = 0; i < value.length; i++) {
+            array = value[i];
+            for (j = 0; j < array.length; j++) {
+                uri = array[j];
+                nextCachePathSet.add(uri.fsPath);
+            }
+        }
+        return nextCachePathSet;
+    }
+
+    private static flushWaitingResolvers(): void {
+        const waitingResolve = this._waitingResolve;
+        this._waitingResolve = [];
+        waitingResolve.forEach((call) => {
+            call();
+        });
+    }
+
+    private static async refreshCacheAssetsWithRetry(): Promise<void> {
+        let nextCachePathSet = await this.collectWorkspaceAssetPaths();
+        if (nextCachePathSet.size === 0 && this._cachePathSet.size > 0) {
+            // 第一次全量扫描返回空，尝试重试一次
+            const retryCachePathSet = await this.collectWorkspaceAssetPaths();
+            if (retryCachePathSet.size > 0) {
+                nextCachePathSet = retryCachePathSet;
+            } else {
+                console.warn("[CocosToolbox] full scan returned empty twice, keep previous cache and retry next time");
+                this._needFullRefresh = true;
+                return;
+            }
+        }
+
+        this._cachePathSet = nextCachePathSet;
+        this._createPathSet.clear();
+        this._deletePathSet.clear();
+        this._needFullRefresh = false;
+        console.log(`[CocosToolbox] full scan assets count: ${this._cachePathSet.size}`);
+    }
+
+    private static getCacheAssets(): Promise<void> {
         return new Promise((resolve) => {
             this._waitingResolve.push(resolve);
             if (this._waitingPromise) {
@@ -121,55 +169,22 @@ export default class FindAssets {
 
             if (!this._needFullRefresh) {
                 this.updateCacheAssets();
-                const waitingResolve = this._waitingResolve;
-                this._waitingResolve = [];
-                waitingResolve.forEach((call) => {
-                    call();
-                });
+                this.flushWaitingResolvers();
                 return;
             }
 
             this._waitingPromise = true;
-            const promises = [vscode.workspace.findFiles("assets/**/*.fire"), vscode.workspace.findFiles("assets/**/*.scene"), vscode.workspace.findFiles("assets/**/*.prefab")];
-            Promise.all(promises)
-                .then((value) => {
-                    let nextCachePathSet: Set<string> = new Set();
-                    let array: vscode.Uri[];
-                    let uri: vscode.Uri;
-                    let i: number;
-                    let j: number;
-                    for (i = 0; i < value.length; i++) {
-                        array = value[i];
-                        for (j = 0; j < array.length; j++) {
-                            uri = array[j];
-                            nextCachePathSet.add(uri.fsPath);
-                        }
-                    }
-
-                    this._cachePathSet = nextCachePathSet;
-                    this._createPathSet.clear();
-                    this._deletePathSet.clear();
-                    this._needFullRefresh = false;
+            this.refreshCacheAssetsWithRetry()
+                .catch(() => { })
+                .finally(() => {
                     this._waitingPromise = false;
-                    const waitingResolve = this._waitingResolve;
-                    this._waitingResolve = [];
-                    waitingResolve.forEach((call) => {
-                        call();
-                    });
-                })
-                .catch(() => {
-                    this._waitingPromise = false;
-                    const waitingResolve = this._waitingResolve;
-                    this._waitingResolve = [];
-                    waitingResolve.forEach((call) => {
-                        call();
-                    });
+                    this.flushWaitingResolvers();
                 });
         });
     }
 
     /**
-     * 更新缓存
+     * 增量更新缓存
      */
     private static updateCacheAssets(): void {
         if (this._createPathSet.size > 0 || this._deletePathSet.size > 0) {
@@ -181,6 +196,25 @@ export default class FindAssets {
             });
             this._createPathSet.clear();
             this._deletePathSet.clear();
+        }
+    }
+
+    /**
+     * 查找引用目标文件的Cocos资源文件
+     */
+    private static async runFindCocosAssets(): Promise<void> {
+        if (this._searchRunning) {
+            this._searchQueued = true;
+            return;
+        }
+        this._searchRunning = true;
+        try {
+            do {
+                this._searchQueued = false;
+                await this.findCocosAssets();
+            } while (this._searchQueued);
+        } finally {
+            this._searchRunning = false;
         }
     }
 
@@ -213,16 +247,34 @@ export default class FindAssets {
 
             let results: string[] = [];
             let invalidPaths: string[] = [];
-            for (let path of this._cachePathSet) {
-                try {
-                    const fileData = await fs.promises.readFile(path, { encoding: "utf8" });
-                    if (!fileData.includes(compressUuid)) continue;
-
-                    results.push(path);
-                } catch {
-                    invalidPaths.push(path);
+            const cachePaths = Array.from(this._cachePathSet);
+            let readIndex = 0;
+            const concurrent = Math.min(16, Math.max(1, cachePaths.length));
+            const getNextIndex = (): number => {
+                if (readIndex >= cachePaths.length) {
+                    return -1;
                 }
+                const nextIndex = readIndex;
+                readIndex += 1;
+                return nextIndex;
+            };
+            const readers: Promise<void>[] = [];
+            for (let i = 0; i < concurrent; i++) {
+                const reader = (async () => {
+                    for (let currentIndex = getNextIndex(); currentIndex !== -1; currentIndex = getNextIndex()) {
+                        const currentPath = cachePaths[currentIndex];
+                        try {
+                            const fileData = await fs.promises.readFile(currentPath, { encoding: "utf8" });
+                            if (!fileData.includes(compressUuid)) continue;
+                            results.push(currentPath);
+                        } catch {
+                            invalidPaths.push(currentPath);
+                        }
+                    }
+                })();
+                readers.push(reader);
             }
+            await Promise.all(readers);
             invalidPaths.forEach((invalidPath) => {
                 this._cachePathSet.delete(invalidPath);
             });
@@ -271,10 +323,8 @@ export default class FindAssets {
                 error: result.error,
             });
             if (!result.success) {
-                vscode.window.showWarningMessage(`请求 Creator 失败：${result.error}`);
                 return;
             }
-            vscode.window.setStatusBarMessage(`已通知 Creator 打开: ${path.basename(referencePath)}`, 2500);
         });
         this._referencesPanel = panel;
         return panel;
@@ -315,6 +365,14 @@ export default class FindAssets {
             };
             const transport = targetUrl.protocol === "https:" ? https : http;
             return await new Promise<{ success: boolean; error: string }>((resolve) => {
+                let settled = false;
+                const safeResolve = (result: { success: boolean; error: string }) => {
+                    if (settled) {
+                        return;
+                    }
+                    settled = true;
+                    resolve(result);
+                };
                 const request = transport.request(targetUrl, options, (response) => {
                     let body = "";
                     response.on("data", (chunk) => {
@@ -323,19 +381,19 @@ export default class FindAssets {
                     const statusCode = response.statusCode ?? 500;
                     response.on("end", () => {
                         if (statusCode >= 200 && statusCode < 300) {
-                            resolve({ success: true, error: "" });
+                            safeResolve({ success: true, error: "" });
                             return;
                         }
                         const detail = this.readResponseMessage(body);
-                        resolve({ success: false, error: `${requestUrl} 返回状态 ${statusCode}${detail ? `: ${detail}` : ""}` });
+                        safeResolve({ success: false, error: `${requestUrl} 返回状态 ${statusCode}${detail ? `: ${detail}` : ""}` });
                     });
                 });
                 request.on("error", (error) => {
-                    resolve({ success: false, error: `${requestUrl} 请求异常: ${error.message}` });
+                    safeResolve({ success: false, error: `${requestUrl} 请求异常: ${error.message}` });
                 });
                 request.setTimeout(Config.creatorOpenAssetTimeout, () => {
-                    request.destroy();
-                    resolve({ success: false, error: `${requestUrl} 请求超时` });
+                    request.destroy(new Error("timeout"));
+                    safeResolve({ success: false, error: `${requestUrl} 请求超时` });
                 });
                 request.write(payload);
                 request.end();

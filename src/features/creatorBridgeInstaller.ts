@@ -8,13 +8,27 @@ type CreatorBridgeProfile = {
     installSubDir: "packages" | "extensions";
 };
 
+/** Cocos项目文件状态 */
+type CocosProjectFilesState = {
+    /** 是否有assets目录 */
+    hasAssetsDir: boolean;
+    /** 是否有project.json */
+    hasProjectJson: boolean;
+    /** 是否有package.json */
+    hasPackageJson: boolean;
+    /** project.json路径 */
+    projectJsonPath: string;
+    /** package.json路径 */
+    packageJsonPath: string;
+};
+
 const BRIDGE_PACKAGE_NAME = "vscode-creator-bridge";
 const BRIDGE_TEMPLATE_REL_PATH = path.join("resources", BRIDGE_PACKAGE_NAME);
 const BRIDGE_SYNC_ENTRIES = ["package.json", "dist"];
 const PROFILES: CreatorBridgeProfile[] = [
     {
-        name: "2.4.x",
-        matchVersion: (version: string) => /^2\.4(\.|$)/.test(version),
+        name: "2.x",
+        matchVersion: (version: string) => /^2\./.test(version),
         installSubDir: "packages",
     },
     {
@@ -23,6 +37,7 @@ const PROFILES: CreatorBridgeProfile[] = [
         installSubDir: "extensions",
     },
 ];
+const INSTALL_LOCKS: Map<string, Promise<void>> = new Map();
 
 /**
  * 确保Creator扩展vscode-creator-bridge已安装，且为最新版本
@@ -33,127 +48,125 @@ export async function ensureCreatorBridgeReady(extensionPath: string, referenceP
         return;
     }
     const projectRoot = workspaceFolder.uri.fsPath;
-    if (!(await isCocosProject(projectRoot))) {
+    const running = INSTALL_LOCKS.get(projectRoot);
+    if (running) {
+        await running;
         return;
     }
+    const task = (async () => {
+        const state = await readCocosProjectFilesState(projectRoot);
+        if (!isCocosProject(state)) {
+            return;
+        }
 
-    const version = await resolveCreatorVersion(projectRoot);
-    if (!version) {
-        return;
-    }
-    const profile = resolveProfile(version);
-    if (!profile) {
-        return;
-    }
+        const version = await resolveCreatorVersion(state);
+        if (!version) {
+            return;
+        }
+        const profile = resolveProfile(version);
+        if (!profile) {
+            return;
+        }
 
-    const bridgeTemplatePath = await resolveBridgeTemplatePath(extensionPath);
-    if (!bridgeTemplatePath) {
-        return;
-    }
+        const bridgeTemplatePath = await resolveBridgeTemplatePath(extensionPath);
+        if (!bridgeTemplatePath) {
+            return;
+        }
 
-    const targetPath = path.join(projectRoot, profile.installSubDir, BRIDGE_PACKAGE_NAME);
-    const legacyInstallSubDir = profile.installSubDir === "packages" ? "extensions" : "packages";
-    const legacyPath = path.join(projectRoot, legacyInstallSubDir, BRIDGE_PACKAGE_NAME);
-    const hasLegacyBridge = await checkPath(legacyPath);
-    const sourceVersion = await readPackageVersion(path.join(bridgeTemplatePath, "package.json"));
-    const targetVersion = await readPackageVersion(path.join(targetPath, "package.json"));
-    const targetHealthy = await checkTargetBridgeHealthy(targetPath);
-    const shouldSync = hasLegacyBridge || !targetVersion || sourceVersion !== targetVersion || !targetHealthy;
-    if (!shouldSync) {
-        return;
-    }
+        const targetPath = path.join(projectRoot, profile.installSubDir, BRIDGE_PACKAGE_NAME);
+        const legacyInstallSubDir = profile.installSubDir === "packages" ? "extensions" : "packages";
+        const legacyPath = path.join(projectRoot, legacyInstallSubDir, BRIDGE_PACKAGE_NAME);
+        const hasLegacyBridge = await checkPath(legacyPath);
+        const sourceVersion = await readPackageVersion(path.join(bridgeTemplatePath, "package.json"));
+        const targetVersion = await readPackageVersion(path.join(targetPath, "package.json"));
+        const targetHealthy = await checkTargetBridgeHealthy(targetPath);
+        const shouldSync = hasLegacyBridge || !targetVersion || sourceVersion !== targetVersion || !targetHealthy;
+        if (!shouldSync) {
+            return;
+        }
 
-    if (hasLegacyBridge) {
-        await removePathCompatible(legacyPath);
+        if (hasLegacyBridge) {
+            await removePathCompatible(legacyPath);
+        }
+        await syncBridgeTemplate(bridgeTemplatePath, targetPath);
+    })();
+    INSTALL_LOCKS.set(projectRoot, task);
+    try {
+        await task;
+    } finally {
+        if (INSTALL_LOCKS.get(projectRoot) === task) {
+            INSTALL_LOCKS.delete(projectRoot);
+        }
     }
-    await syncBridgeTemplate(bridgeTemplatePath, targetPath);
 }
 
-async function isCocosProject(projectRoot: string): Promise<boolean> {
-    const hasAssetsDir = await checkPath(path.join(projectRoot, "assets"));
-    if (!hasAssetsDir) {
+function isCocosProject(state: CocosProjectFilesState): boolean {
+    if (!state.hasAssetsDir) {
         return false;
     }
-    const hasSettingsProject = await checkPath(path.join(projectRoot, "settings", "project.json"));
-    const hasProjectJson = await checkPath(path.join(projectRoot, "project.json"));
-    const creatorVersionFromPackage = await readCreatorVersionFromPackage(projectRoot);
-    return hasSettingsProject || hasProjectJson || !!creatorVersionFromPackage;
+    return state.hasProjectJson || state.hasPackageJson;
 }
 
-async function resolveCreatorVersion(projectRoot: string): Promise<string | undefined> {
-    const creatorVersionFromPackage = await readCreatorVersionFromPackage(projectRoot);
-    if (creatorVersionFromPackage) {
-        return creatorVersionFromPackage;
+async function resolveCreatorVersion(state: CocosProjectFilesState): Promise<string | undefined> {
+    if (!state.hasAssetsDir) {
+        return undefined;
     }
-    const candidates = [path.join(projectRoot, "settings", "project.json"), path.join(projectRoot, "project.json")];
-    for (const candidate of candidates) {
-        try {
-            const raw = await fs.promises.readFile(candidate, { encoding: "utf8" });
-            const parsed = JSON.parse(raw);
-            const fromKnownKeys = findVersionFromKnownKeys(parsed);
-            if (fromKnownKeys) {
-                return fromKnownKeys;
-            }
-            const fromScan = findVersionByScan(parsed);
-            if (fromScan) {
-                return fromScan;
-            }
-        } catch {}
+
+    if (state.hasProjectJson) {
+        const versionFromProjectJson = await readVersionFromProjectJson(state.projectJsonPath);
+        if (versionFromProjectJson && /^2\./.test(versionFromProjectJson)) {
+            return versionFromProjectJson;
+        }
     }
+
+    if (state.hasPackageJson) {
+        const versionFromPackageJson = await readVersionFromPackageJson(state.packageJsonPath);
+        if (versionFromPackageJson && /^3\./.test(versionFromPackageJson)) {
+            return versionFromPackageJson;
+        }
+    }
+
     return undefined;
 }
 
-async function readCreatorVersionFromPackage(projectRoot: string): Promise<string | undefined> {
-    const packagePath = path.join(projectRoot, "package.json");
+async function readCocosProjectFilesState(projectRoot: string): Promise<CocosProjectFilesState> {
+    const projectJsonPath = path.join(projectRoot, "project.json");
+    const packageJsonPath = path.join(projectRoot, "package.json");
+    const [hasAssetsDir, hasProjectJson, hasPackageJson] = await Promise.all([checkPath(path.join(projectRoot, "assets")), checkPath(projectJsonPath), checkPath(packageJsonPath)]);
+    return {
+        hasAssetsDir,
+        hasProjectJson,
+        hasPackageJson,
+        projectJsonPath,
+        packageJsonPath,
+    };
+}
+
+async function readVersionFromProjectJson(projectPath: string): Promise<string | undefined> {
     try {
-        const raw = await fs.promises.readFile(packagePath, { encoding: "utf8" });
-        const parsed = JSON.parse(raw) as { creator?: { version?: string } };
-        const version = parsed.creator && typeof parsed.creator.version === "string" ? parsed.creator.version : undefined;
+        const raw = await fs.promises.readFile(projectPath, { encoding: "utf8" });
+        const parsed = JSON.parse(raw) as { version?: string };
+        const version = typeof parsed.version === "string" ? parsed.version : undefined;
         if (version && /\d+\.\d+/.test(version)) {
             return version;
         }
-    } catch {}
+    } catch { }
     return undefined;
 }
 
-function findVersionFromKnownKeys(value: unknown): string | undefined {
-    if (!value || typeof value !== "object") {
-        return undefined;
-    }
-    const objectValue = value as Record<string, unknown>;
-    const keys = ["engineVersion", "version", "creatorVersion", "editorVersion"];
-    for (const key of keys) {
-        const keyValue = objectValue[key];
-        if (typeof keyValue === "string" && /\d+\.\d+/.test(keyValue)) {
-            return keyValue;
+async function readVersionFromPackageJson(packagePath: string): Promise<string | undefined> {
+    try {
+        const raw = await fs.promises.readFile(packagePath, { encoding: "utf8" });
+        const parsed = JSON.parse(raw) as { version?: string; creator?: { version?: string } };
+        const creatorVersion = parsed.creator && typeof parsed.creator.version === "string" ? parsed.creator.version : undefined;
+        if (creatorVersion && /\d+\.\d+/.test(creatorVersion)) {
+            return creatorVersion;
         }
-    }
-    return undefined;
-}
-
-function findVersionByScan(value: unknown): string | undefined {
-    if (typeof value === "string") {
-        const match = value.match(/\b\d+\.\d+\.\d+\b/);
-        return match ? match[0] : undefined;
-    }
-    if (Array.isArray(value)) {
-        for (const item of value) {
-            const found = findVersionByScan(item);
-            if (found) {
-                return found;
-            }
+        const version = typeof parsed.version === "string" ? parsed.version : undefined;
+        if (version && /\d+\.\d+/.test(version)) {
+            return version;
         }
-        return undefined;
-    }
-    if (value && typeof value === "object") {
-        const objectValue = value as Record<string, unknown>;
-        for (const key of Object.keys(objectValue)) {
-            const found = findVersionByScan(objectValue[key]);
-            if (found) {
-                return found;
-            }
-        }
-    }
+    } catch { }
     return undefined;
 }
 

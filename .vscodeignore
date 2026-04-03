@@ -9,3 +9,9 @@ vsc-extension-quickstart.md
 **/*.map
 **/*.ts
 **/.vscode-test.*
+
+resources/vscode-creator-bridge/src/**
+resources/vscode-creator-bridge/node_modules/**
+resources/vscode-creator-bridge/build.mjs
+resources/vscode-creator-bridge/package-lock.json
+resources/vscode-creator-bridge/tsconfig.json

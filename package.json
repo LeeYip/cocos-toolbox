@@ -2,7 +2,7 @@
   "name": "cocos-toolbox",
   "displayName": "Cocos Toolbox",
   "description": "Enhance your Cocos Creator project development workflow.",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "publisher": "lee-yip",
   "icon": "image/icon.png",
   "repository": {

@@ -1,5 +1,11 @@
 # Change Log
 
+## v1.0.5 - 2026-04-03
+
+- Find References: Added support for focusing the Cocos Creator window when opening assets.
+- Find References: Added support for locating opened assets in Cocos Creator Asset Browser.
+- Bug Fix
+
 ## v1.0.4 - 2026-03-31
 
 - Update README
