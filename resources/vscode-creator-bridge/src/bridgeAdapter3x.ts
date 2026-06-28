@@ -55,13 +55,11 @@ export class BridgeAdapter3x implements BridgeAdapter {
                 };
             }
 
-            if (Editor && Editor.Message && typeof Editor.Message.request === "function") {
-                try {
-                    await Editor.Message.request("asset-db", "open-asset", uuid);
-                    opened = true;
-                    message = "opened by uuid";
-                } catch { }
-            }
+            try {
+                await Editor.Message.request("asset-db", "open-asset", uuid);
+                opened = true;
+                message = "opened by uuid";
+            } catch { }
         }
         if (!opened) {
             message = `failed to open asset. uuid=${uuid || "<none>"} assetUrl=${resolvedAssetUrl || "<none>"}`;

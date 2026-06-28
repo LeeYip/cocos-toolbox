@@ -1,5 +1,9 @@
 # Change Log
 
+## v1.0.7 - 2026-06-28
+
+- Refactor: Cleaned up redundant logic.
+
 ## v1.0.6 - 2026-06-28
 
 - Commands: Added `Show in Cocos Creator` for opening scene and prefab assets directly, and locating ordinary assets from the editor and Explorer context menus.

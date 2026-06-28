@@ -43,7 +43,6 @@ export class BridgeAdapter2x implements BridgeAdapter {
         // 注：2.x暂未找到能判断当前预制体的方法，scene:query-hierarchy 对预制体来说uuid是动态的，而非记录在prefab文件中的uuid
         const hierarchyResult = await this.queryHierarchy();
         if (!hierarchyResult.error && hierarchyResult.uuid === uuid) {
-            Editor.log(`asset already opened. uuid=${uuid}`);
             return { ok: true, opened: true, located: false, assetUrl: resolvedAssetUrl, kind: "other", message: "asset already opened" };
         }
 
@@ -86,19 +85,15 @@ export class BridgeAdapter2x implements BridgeAdapter {
         }
         const methods: string[] = [];
         try {
-            if (Editor && Editor.Selection && typeof Editor.Selection.select === "function" && typeof Editor.Selection.clear === "function") {
-                Editor.Selection.clear("asset");
-                Editor.Selection.select("asset", locateUuid);
-                methods.push("Editor.Selection.clear+select(asset,uuid)");
-            }
+            Editor.Selection.clear("asset");
+            Editor.Selection.select("asset", locateUuid);
+            methods.push("Editor.Selection.clear+select(asset,uuid)");
         } catch { }
 
         const hintMethod = "assets:hint(uuid)";
         try {
-            if (Editor && Editor.Ipc && typeof Editor.Ipc.sendToAll === "function") {
-                Editor.Ipc.sendToAll("assets:hint", locateUuid);
-                methods.push(hintMethod);
-            }
+            Editor.Ipc.sendToAll("assets:hint", locateUuid);
+            methods.push(hintMethod);
         } catch { }
 
         if (methods.length === 0) {

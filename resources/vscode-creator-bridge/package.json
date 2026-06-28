@@ -1,7 +1,7 @@
 {
   "name": "vscode-creator-bridge",
   "package_version": 2,
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "VSCode and Cocos Creator bridge extension",
   "author": "lee-yip",
   "main": "dist/main.js",
