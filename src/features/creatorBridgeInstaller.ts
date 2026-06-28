@@ -1,6 +1,7 @@
 import * as fs from "fs";
-import path from "path";
+import * as path from "path";
 import * as vscode from "vscode";
+import Utils from "../utils/utils";
 
 type CreatorBridgeProfile = {
     name: string;
@@ -76,7 +77,7 @@ export async function ensureCreatorBridgeReady(extensionPath: string, referenceP
         const targetPath = path.join(projectRoot, profile.installSubDir, BRIDGE_PACKAGE_NAME);
         const legacyInstallSubDir = profile.installSubDir === "packages" ? "extensions" : "packages";
         const legacyPath = path.join(projectRoot, legacyInstallSubDir, BRIDGE_PACKAGE_NAME);
-        const hasLegacyBridge = await checkPath(legacyPath);
+        const hasLegacyBridge = await Utils.checkPath(legacyPath);
         const sourceVersion = await readPackageVersion(path.join(bridgeTemplatePath, "package.json"));
         const targetVersion = await readPackageVersion(path.join(targetPath, "package.json"));
         const targetHealthy = await checkTargetBridgeHealthy(targetPath);
@@ -98,6 +99,11 @@ export async function ensureCreatorBridgeReady(extensionPath: string, referenceP
             INSTALL_LOCKS.delete(projectRoot);
         }
     }
+}
+
+export async function isCocosCreatorProjectRoot(projectRoot: string): Promise<boolean> {
+    const state = await readCocosProjectFilesState(projectRoot);
+    return isCocosProject(state);
 }
 
 function isCocosProject(state: CocosProjectFilesState): boolean {
@@ -132,7 +138,7 @@ async function resolveCreatorVersion(state: CocosProjectFilesState): Promise<str
 async function readCocosProjectFilesState(projectRoot: string): Promise<CocosProjectFilesState> {
     const projectJsonPath = path.join(projectRoot, "project.json");
     const packageJsonPath = path.join(projectRoot, "package.json");
-    const [hasAssetsDir, hasProjectJson, hasPackageJson] = await Promise.all([checkPath(path.join(projectRoot, "assets")), checkPath(projectJsonPath), checkPath(packageJsonPath)]);
+    const [hasAssetsDir, hasProjectJson, hasPackageJson] = await Promise.all([Utils.checkPath(path.join(projectRoot, "assets")), Utils.checkPath(projectJsonPath), Utils.checkPath(packageJsonPath)]);
     return {
         hasAssetsDir,
         hasProjectJson,
@@ -176,7 +182,7 @@ function resolveProfile(version: string): CreatorBridgeProfile | undefined {
 
 async function resolveBridgeTemplatePath(extensionPath: string): Promise<string | undefined> {
     const candidatePath = path.join(extensionPath, BRIDGE_TEMPLATE_REL_PATH);
-    if (!(await checkPath(candidatePath))) {
+    if (!(await Utils.checkPath(candidatePath))) {
         return undefined;
     }
     return candidatePath;
@@ -195,20 +201,11 @@ async function readPackageVersion(packagePath: string): Promise<string | undefin
 async function checkTargetBridgeHealthy(targetPath: string): Promise<boolean> {
     const requiredFiles = [path.join(targetPath, "package.json"), path.join(targetPath, "dist", "main.js")];
     for (const file of requiredFiles) {
-        if (!(await checkPath(file))) {
+        if (!(await Utils.checkPath(file))) {
             return false;
         }
     }
     return true;
-}
-
-async function checkPath(pathValue: string): Promise<boolean> {
-    try {
-        await fs.promises.access(pathValue);
-        return true;
-    } catch {
-        return false;
-    }
 }
 
 async function syncBridgeTemplate(sourceRoot: string, targetRoot: string): Promise<void> {
@@ -217,7 +214,7 @@ async function syncBridgeTemplate(sourceRoot: string, targetRoot: string): Promi
     await fs.promises.mkdir(targetRoot, { recursive: true });
     for (const entry of BRIDGE_SYNC_ENTRIES) {
         const sourcePath = path.join(sourceRoot, entry);
-        if (!(await checkPath(sourcePath))) {
+        if (!(await Utils.checkPath(sourcePath))) {
             continue;
         }
         const targetPath = path.join(targetRoot, entry);
@@ -226,7 +223,7 @@ async function syncBridgeTemplate(sourceRoot: string, targetRoot: string): Promi
 }
 
 async function removePathCompatible(pathValue: string): Promise<void> {
-    if (!(await checkPath(pathValue))) {
+    if (!(await Utils.checkPath(pathValue))) {
         return;
     }
     const stat = await fs.promises.lstat(pathValue);

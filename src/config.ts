@@ -1,5 +1,4 @@
 import * as vscode from "vscode";
-import ColorToken from "./features/colorToken";
 
 /**
  * 插件配置项
@@ -8,7 +7,7 @@ export default class Config {
     public static readonly enableMetaId: string = "CocosToolbox.enableMeta";
     public static readonly enableColorId: string = "CocosToolbox.enableColor";
     public static readonly colorLanguagesId: string = "CocosToolbox.colorLanguages";
-    public static readonly creatorOpenAssetTimeoutId: string = "CocosToolbox.creatorOpenAssetTimeout";
+    public static readonly creatorBridgeRequestTimeoutId: string = "CocosToolbox.creatorBridgeRequestTimeout";
 
     private static _init: boolean = false;
 
@@ -27,34 +26,25 @@ export default class Config {
         return this._colorLanguages;
     }
 
-    private static _creatorOpenAssetTimeout: number = 1500;
-    public static get creatorOpenAssetTimeout(): number {
-        return this._creatorOpenAssetTimeout;
+    private static _creatorBridgeRequestTimeout: number = 3000;
+    public static get creatorBridgeRequestTimeout(): number {
+        return this._creatorBridgeRequestTimeout;
     }
 
-    public static init(context: vscode.ExtensionContext): void {
-        if (this._init) return;
+    public static init(_context: vscode.ExtensionContext): void {
+        if (this._init) {
+            return;
+        }
         this._init = true;
 
-        this._enableMeta = vscode.workspace.getConfiguration().get(this.enableMetaId, true);
-        this._enableColor = vscode.workspace.getConfiguration().get(this.enableColorId, true);
-        this._colorLanguages = vscode.workspace.getConfiguration().get(this.colorLanguagesId, []);
-        this._creatorOpenAssetTimeout = vscode.workspace.getConfiguration().get(this.creatorOpenAssetTimeoutId, 1500);
+        this.refresh();
+    }
 
-        // 监听配置变化
-        context.subscriptions.push(
-            vscode.workspace.onDidChangeConfiguration((e) => {
-                if (e.affectsConfiguration(this.enableMetaId)) {
-                    this._enableMeta = vscode.workspace.getConfiguration().get(this.enableMetaId, true);
-                } else if (e.affectsConfiguration(this.enableColorId)) {
-                    this._enableColor = vscode.workspace.getConfiguration().get(this.enableColorId, true);
-                } else if (e.affectsConfiguration(this.colorLanguagesId)) {
-                    this._colorLanguages = vscode.workspace.getConfiguration().get(this.colorLanguagesId, []);
-                    ColorToken.updateColorProvider();
-                } else if (e.affectsConfiguration(this.creatorOpenAssetTimeoutId)) {
-                    this._creatorOpenAssetTimeout = vscode.workspace.getConfiguration().get(this.creatorOpenAssetTimeoutId, 1500);
-                }
-            }),
-        );
+    public static refresh(): void {
+        const config = vscode.workspace.getConfiguration();
+        this._enableMeta = config.get(this.enableMetaId, true);
+        this._enableColor = config.get(this.enableColorId, true);
+        this._colorLanguages = config.get(this.colorLanguagesId, []);
+        this._creatorBridgeRequestTimeout = config.get(this.creatorBridgeRequestTimeoutId, 3000);
     }
 }

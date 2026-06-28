@@ -1,4 +1,3 @@
-
 var Base64KeyChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 var AsciiTo64 = new Array(128);
 for (var i = 0; i < 128; ++i) { AsciiTo64[i] = 0; }

@@ -12,9 +12,22 @@ type BridgeState = {
     running: boolean;
 };
 
+type ResolvedRequestAsset = {
+    uuid: string | null;
+    assetUrl: string | null;
+    payload: OpenAssetPayload;
+};
+
+class RequestError extends Error {
+    constructor(public readonly statusCode: number, message: string, public readonly extra?: Record<string, unknown>) {
+        super(message);
+    }
+}
+
 const DEFAULT_PORT = 8456;
 const PACKAGE_NAME = "vscode-creator-bridge";
 const SETTINGS_FILE = "vscode-creator-bridge.json";
+const DEBUG_LOG = false;
 
 let server: http.Server | null = null;
 let currentPort = DEFAULT_PORT;
@@ -24,8 +37,9 @@ let activeCreatorMajor = 3;
 let activeAdapter: BridgeAdapter | null = null;
 
 function bridgeLog(message: string): void {
-    // 仅调试用
-    return;
+    if (!DEBUG_LOG) {
+        return;
+    }
     if (Editor && typeof Editor.log === "function") {
         Editor.log(`[${PACKAGE_NAME}] ${message}`);
         return;
@@ -229,6 +243,67 @@ async function openAsset(uuid: string | null, assetUrl: string | null): Promise<
     return merged;
 }
 
+async function revealAsset(uuid: string | null, assetUrl: string | null): Promise<{ ok: boolean; located: boolean; assetUrl: string; message: string; locateMethod?: string }> {
+    if (!activeAdapter) {
+        return {
+            ok: false,
+            located: false,
+            assetUrl: assetUrl || "",
+            message: "adapter is not initialized",
+        };
+    }
+    const locateResult = await activeAdapter.locateAssetInBrowser(uuid, assetUrl);
+    if (locateResult.located) {
+        focusCreatorWindow();
+    }
+    return {
+        ok: locateResult.located,
+        located: locateResult.located,
+        assetUrl: assetUrl || "",
+        message: locateResult.located ? "asset located" : `failed to locate asset. uuid=${uuid || "<none>"} assetUrl=${assetUrl || "<none>"}`,
+        locateMethod: locateResult.locateMethod,
+    };
+}
+
+async function runOpenNodeTask(
+    uuid: string | null,
+    assetUrl: string | null,
+    nodeUuid: string | undefined,
+    nodePath?: string,
+): Promise<void> {
+    if (!activeAdapter) {
+        bridgeLog("openNode task failed: adapter is not initialized");
+        return;
+    }
+    if (!nodeUuid && !nodePath) {
+        bridgeLog("openNode task failed: nodeUuid and nodePath are empty");
+        return;
+    }
+    const openedResult = await activeAdapter.openAsset(uuid, assetUrl);
+    if (!openedResult.opened) {
+        bridgeLog(`openNode task failed to open asset: ${openedResult.message}`);
+        return;
+    }
+    focusCreatorWindow();
+    const assetLocateResult = await activeAdapter.locateAssetInBrowser(uuid, openedResult.assetUrl || assetUrl);
+    const locateResult = await activeAdapter.locateNode(nodeUuid, uuid, openedResult.assetUrl || assetUrl, nodePath);
+    const locateMethod = [assetLocateResult.locateMethod, locateResult.locateMethod].filter(Boolean).join("+") || undefined;
+    bridgeLog(
+        [
+            `openNode task finished selected=${locateResult.selected}`,
+            `assetUrl=${openedResult.assetUrl || assetUrl || "<none>"}`,
+            `nodeUuid=${locateResult.nodeUuid || nodeUuid || "<none>"}`,
+            `nodePath=${locateResult.nodePath || nodePath || "<none>"}`,
+            locateResult.sceneWalkMatchedPath ? `matchedPath=${locateResult.sceneWalkMatchedPath}` : "",
+            locateResult.sceneWalkError ? `sceneWalkError=${locateResult.sceneWalkError}` : "",
+            locateMethod ? `locateMethod=${locateMethod}` : "",
+            `message=${locateResult.selected ? "node selected" : locateResult.message}`,
+        ]
+            .filter(Boolean)
+            .join(" "),
+    );
+}
+
 function readBody(req: http.IncomingMessage): Promise<string> {
     return new Promise((resolve, reject) => {
         let data = "";
@@ -257,6 +332,43 @@ function readBody(req: http.IncomingMessage): Promise<string> {
     });
 }
 
+async function resolveRequestAsset(req: http.IncomingMessage): Promise<ResolvedRequestAsset> {
+    const raw = await readBody(req);
+    const payload = raw ? (JSON.parse(raw) as OpenAssetPayload) : {};
+    const projectIdHeader = String(req.headers["x-cocos-project-id"] || "").trim();
+    const requestProjectId = String(payload.projectId || projectIdHeader).trim();
+    if (!requestProjectId) {
+        throw new RequestError(400, "missing projectId");
+    }
+    if (requestProjectId !== currentProjectId) {
+        throw new RequestError(409, "projectId mismatch", { projectId: currentProjectId });
+    }
+    if (!activeAdapter) {
+        throw new RequestError(500, "bridge adapter is not initialized");
+    }
+    const assetUrl = normalizeAssetUrl(payload.assetPath);
+    const uuid = await activeAdapter.resolveUuid(payload, assetUrl || null);
+    if (!uuid && !assetUrl) {
+        throw new RequestError(400, "invalid assetPath/uuid");
+    }
+    return {
+        uuid,
+        assetUrl: assetUrl || null,
+        payload,
+    };
+}
+
+function writeError(res: http.ServerResponse, error: unknown, fallbackMessage: string): void {
+    if (error instanceof RequestError) {
+        res.statusCode = error.statusCode;
+        res.end(JSON.stringify({ ok: false, message: error.message, ...error.extra }));
+        return;
+    }
+    const message = error instanceof Error ? error.message : fallbackMessage;
+    res.statusCode = 500;
+    res.end(JSON.stringify({ ok: false, message: message || fallbackMessage }));
+}
+
 async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     const method = (req.method || "").toUpperCase();
     const reqUrl = (req.url || "").split("?")[0];
@@ -268,39 +380,52 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     }
     if (method === "POST" && reqUrl === "/open-asset") {
         try {
-            const raw = await readBody(req);
-            const payload = raw ? (JSON.parse(raw) as OpenAssetPayload) : {};
-            const projectIdHeader = String(req.headers["x-cocos-project-id"] || "").trim();
-            const requestProjectId = String(payload.projectId || projectIdHeader).trim();
-            if (!requestProjectId) {
-                res.statusCode = 400;
-                res.end(JSON.stringify({ ok: false, message: "missing projectId" }));
-                return;
-            }
-            if (requestProjectId !== currentProjectId) {
-                res.statusCode = 409;
-                res.end(JSON.stringify({ ok: false, message: "projectId mismatch", projectId: currentProjectId }));
-                return;
-            }
-            if (!activeAdapter) {
-                res.statusCode = 500;
-                res.end(JSON.stringify({ ok: false, message: "bridge adapter is not initialized" }));
-                return;
-            }
-            const assetUrl = normalizeAssetUrl(payload.assetPath);
-            const uuid = await activeAdapter.resolveUuid(payload, assetUrl || null);
-            if (!uuid && !assetUrl) {
-                res.statusCode = 400;
-                res.end(JSON.stringify({ ok: false, message: "invalid assetPath/uuid" }));
-                return;
-            }
-            const result = await openAsset(uuid, assetUrl || null);
+            const { uuid, assetUrl } = await resolveRequestAsset(req);
+            const result = await openAsset(uuid, assetUrl);
             res.statusCode = result.ok ? 200 : 500;
             res.end(JSON.stringify({ ok: result.ok, uuid, ...result }));
             return;
-        } catch (e: any) {
-            res.statusCode = 500;
-            res.end(JSON.stringify({ ok: false, message: e?.message || "open failed" }));
+        } catch (error) {
+            writeError(res, error, "open failed");
+            return;
+        }
+    }
+    if (method === "POST" && reqUrl === "/reveal-asset") {
+        try {
+            const { uuid, assetUrl } = await resolveRequestAsset(req);
+            const result = await revealAsset(uuid, assetUrl);
+            res.statusCode = result.ok ? 200 : 500;
+            res.end(JSON.stringify({ ok: result.ok, uuid, ...result }));
+            return;
+        } catch (error) {
+            writeError(res, error, "reveal failed");
+            return;
+        }
+    }
+    if (method === "POST" && reqUrl === "/open-node") {
+        try {
+            const { uuid, assetUrl, payload } = await resolveRequestAsset(req);
+            if (!payload.nodeUuid && !payload.nodePath) {
+                throw new RequestError(400, "nodeUuid and nodePath are empty");
+            }
+            runOpenNodeTask(uuid, assetUrl, payload.nodeUuid, payload.nodePath).catch((error) => {
+                bridgeLog(`openNode task failed: ${error instanceof Error ? error.message : String(error)}`);
+            });
+            res.statusCode = 200;
+            res.end(
+                JSON.stringify({
+                    ok: true,
+                    accepted: true,
+                    uuid,
+                    assetUrl,
+                    nodeUuid: payload.nodeUuid,
+                    nodePath: payload.nodePath,
+                    message: "node locate task accepted",
+                }),
+            );
+            return;
+        } catch (error) {
+            writeError(res, error, "open node failed");
             return;
         }
     }

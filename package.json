@@ -2,7 +2,7 @@
   "name": "cocos-toolbox",
   "displayName": "Cocos Toolbox",
   "description": "Enhance your Cocos Creator project development workflow.",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "publisher": "lee-yip",
   "icon": "image/icon.png",
   "repository": {
@@ -25,6 +25,11 @@
         "command": "CocosToolbox.findReferences",
         "title": "Find Cocos References",
         "category": "Cocos"
+      },
+      {
+        "command": "CocosToolbox.showAssetInCreator",
+        "title": "Show in Cocos Creator",
+        "category": "Cocos"
       }
     ],
     "menus": {
@@ -32,7 +37,24 @@
         {
           "command": "CocosToolbox.findReferences",
           "group": "navigation",
-          "when": "editorLangId == typescript || editorLangId == javascript"
+          "when": "CocosToolbox.isCocosProject && resourceDirname =~ /[\\\\/]assets([\\\\/]|$)/ && (editorLangId == typescript || editorLangId == javascript)"
+        },
+        {
+          "command": "CocosToolbox.showAssetInCreator",
+          "group": "navigation",
+          "when": "CocosToolbox.isCocosProject && resourceDirname =~ /[\\\\/]assets([\\\\/]|$)/ && resourceExtname =~ /\\.(png|jpg|jpeg|webp|bmp|gif|svg|fbx|prefab|anim|animation|fire|scene|atlas|plist|json|material|mtl|effect|shader|mp3|wav|ogg|m4a|mp4|ttf|otf|fnt)$/i"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "CocosToolbox.findReferences",
+          "group": "navigation",
+          "when": "CocosToolbox.isCocosProject && resourceDirname =~ /[\\\\/]assets([\\\\/]|$)/ && resourceExtname =~ /\\.(ts|js)$/i"
+        },
+        {
+          "command": "CocosToolbox.showAssetInCreator",
+          "group": "navigation",
+          "when": "CocosToolbox.isCocosProject && resourceDirname =~ /[\\\\/]assets([\\\\/]|$)/ && resourceExtname =~ /\\.(png|jpg|jpeg|webp|bmp|gif|svg|fbx|prefab|anim|animation|fire|scene|atlas|plist|json|material|mtl|effect|shader|mp3|wav|ogg|m4a|mp4|ttf|otf|fnt)$/i"
         }
       ]
     },
@@ -41,7 +63,13 @@
         "command": "CocosToolbox.findReferences",
         "key": "ctrl+alt+f",
         "mac": "cmd+alt+f",
-        "when": "editorTextFocus"
+        "when": "CocosToolbox.isCocosProject && editorTextFocus && resourceDirname =~ /[\\\\/]assets([\\\\/]|$)/ && (editorLangId == typescript || editorLangId == javascript)"
+      },
+      {
+        "command": "CocosToolbox.showAssetInCreator",
+        "key": "ctrl+alt+o",
+        "mac": "cmd+alt+o",
+        "when": "CocosToolbox.isCocosProject && editorTextFocus && resourceDirname =~ /[\\\\/]assets([\\\\/]|$)/ && resourceExtname =~ /\\.(png|jpg|jpeg|webp|bmp|gif|svg|fbx|prefab|anim|animation|fire|scene|atlas|plist|json|material|mtl|effect|shader|mp3|wav|ogg|m4a|mp4|ttf|otf|fnt)$/i"
       }
     ],
     "configuration": {
@@ -70,11 +98,11 @@
           },
           "description": "List of file formats supported by color token."
         },
-        "CocosToolbox.creatorOpenAssetTimeout": {
+        "CocosToolbox.creatorBridgeRequestTimeout": {
           "type": "number",
-          "default": 1500,
+          "default": 3000,
           "minimum": 200,
-          "description": "Timeout (milliseconds) for notifying Cocos Creator."
+          "description": "Timeout (milliseconds) for requests to the Cocos Creator bridge."
         }
       }
     }

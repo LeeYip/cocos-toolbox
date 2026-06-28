@@ -18,8 +18,10 @@
 
 ### 3) 一键查找脚本被哪些资源引用
 - 快捷键：**<kbd>Ctrl / Cmd</kbd> + <kbd>Alt</kbd> + <kbd>F</kbd>**
-- 在右键菜单中快速查找“引用当前脚本”的场景和预制体。
+- 在 `assets` 目录下的脚本右键菜单中使用 `Find Cocos References`，快速查找“引用当前脚本”的场景和预制体。
 - 在结果面板中点击条目后，会通知 Cocos Creator（支持2.x与3.x版本）打开对应资源。
+- 点击每个引用条目右侧的“节点”按钮，可展开查看该场景/预制体中所有引用了当前脚本的节点列表，显示节点在层级中的完整路径。
+- 点击展开后的节点名称，可直接在 Cocos Creator 中定位并选中该节点，便于快速跳转到目标对象进行编辑。
 - 首次使用该功能时，会自动在当前 Cocos Creator 项目的扩展目录安装桥接扩展`vscode-creator-bridge`。
 - 由于 Creator 扩展机制，桥接扩展安装后通常需要重启一次 Creator 才会生效。
 - 若面板提示“通知失败”，请优先检查：
@@ -29,8 +31,17 @@
 
 ![image](./image/find.gif)</br>
 
+### 4) 在 Cocos Creator 中显示资源
+- 快捷键：**<kbd>Ctrl / Cmd</kbd> + <kbd>Alt</kbd> + <kbd>O</kbd>**
+- 在 `assets` 目录下的资源右键菜单中使用 `Show in Cocos Creator`。
+- 对场景和预制体资源（`.fire`、`.scene`、`.prefab`）会直接在 Cocos Creator 中打开并选中。
+- 对图片、音频、字体、材质等普通资源会在 Cocos Creator 的资源管理器中定位并选中。
+- 首次使用该功能时，会自动在当前 Cocos Creator 项目的扩展目录安装桥接扩展`vscode-creator-bridge`，安装和生效规则同上。
+
+![image](./image/show.gif)</br>
+
 ## 配置项
 - `CocosToolbox.enableMeta`：是否启用 Meta 自动同步。
 - `CocosToolbox.enableColor`：是否启用颜色预览与选择。
 - `CocosToolbox.colorLanguages`：颜色预览支持的语言列表。
-- `CocosToolbox.creatorOpenAssetTimeout`：通知 Cocos Creator 打开资源的超时时间（毫秒）。
+- `CocosToolbox.creatorBridgeRequestTimeout`：请求 Cocos Creator 桥接服务的超时时间（毫秒）。

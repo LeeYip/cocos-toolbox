@@ -8,7 +8,9 @@ import Utils from "../utils/utils";
  */
 export default class MetaSync {
     public static onDidDeleteFiles(files: readonly vscode.Uri[]): void {
-        if (!Config.enableMeta) return;
+        if (!Config.enableMeta) {
+            return;
+        }
 
         let file: vscode.Uri;
         for (let i = 0; i < files.length; i++) {
@@ -18,7 +20,9 @@ export default class MetaSync {
     }
 
     public static onDidRenameFiles(files: readonly { readonly oldUri: vscode.Uri; readonly newUri: vscode.Uri }[]): void {
-        if (!Config.enableMeta) return;
+        if (!Config.enableMeta) {
+            return;
+        }
 
         let file: { readonly oldUri: vscode.Uri; readonly newUri: vscode.Uri };
         for (let i = 0; i < files.length; i++) {

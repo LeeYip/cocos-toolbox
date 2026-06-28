@@ -11,20 +11,38 @@ export default class ColorToken {
     private static _init: boolean = false;
 
     private static _context: vscode.ExtensionContext;
-    private static _colorProvider: vscode.Disposable;
+    private static _colorProvider: vscode.Disposable | undefined;
 
     public static init(context: vscode.ExtensionContext): void {
-        if (this._init)
+        if (this._init) {
             return;
+        }
         this._init = true;
         this._context = context;
+        context.subscriptions.push({
+            dispose: () => {
+                this.disable();
+            },
+        });
+    }
 
+    public static enable(): void {
         this.updateColorProvider();
     }
 
+    public static disable(): void {
+        this._colorProvider?.dispose();
+        this._colorProvider = undefined;
+    }
+
     public static updateColorProvider(): void {
-        if (!this._context)
+        if (!this._context) {
             return;
+        }
+        if (!Config.enableColor || Config.colorLanguages.length <= 0) {
+            this.disable();
+            return;
+        }
 
         // 取消现有的color provider
         this._colorProvider?.dispose();
@@ -34,12 +52,12 @@ export default class ColorToken {
             selector.push({ scheme: "file", language: v });
         });
         this._colorProvider = vscode.languages.registerColorProvider(selector, new ColorProvider());
-        this._context.subscriptions.push(this._colorProvider);
     }
 
     public static setRgba(match: RegExpExecArray | null, rgba: [number, number, number, number], isHex: boolean): void {
-        if (!match)
+        if (!match) {
             return;
+        }
 
         if (isHex) {
             let arr = this.hexToRgba(match[1]);
